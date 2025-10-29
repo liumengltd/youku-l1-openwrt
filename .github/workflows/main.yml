@@ -20,6 +20,8 @@ jobs:
 
     env:
       TZ: Asia/Shanghai
+      # 关键：把临时目录改到工作区，避免 /tmp 爆满
+      TMPDIR: ${{ github.workspace }}/tmp
       EXTRA_PACKAGES: >
         luci
         luci-compat
@@ -38,12 +40,28 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Free disk space (dotnet / android / ghc)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo docker image prune -af || true
+          df -h
+
+      - name: Prepare tmp dir & show env
+        run: |
+          mkdir -p "${TMPDIR}"
+          echo "TMPDIR=${TMPDIR}"
+          df -h
+          echo "CPU cores: $(nproc)"
+
       - name: Install build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
             gettext git libncurses5-dev libssl-dev python3 python3-distutils rsync unzip wget zlib1g-dev \
             file time ccache upx-ucl
+          df -h
 
       - name: Fetch OpenWrt
         run: |
@@ -76,6 +94,7 @@ jobs:
 
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          df -h
 
       - name: Create/restore .config (ramips/mt7620 -> youku_yk-l1)
         working-directory: openwrt
@@ -140,6 +159,7 @@ jobs:
 
           make defconfig
           cp .config ../.config.saved
+          df -h
 
       - name: Default LuCI language & theme (zh_cn + argon)
         working-directory: openwrt
@@ -158,11 +178,21 @@ jobs:
           echo 'CONFIG_CCACHE=y' >> .config
           make defconfig
           make download -j$(nproc)
+          df -h
 
       - name: Build
         working-directory: openwrt
+        env:
+          # make 失败时会提示改为 -j1 V=s；我们先用多核，失败会自动降级重试一遍
+          MAKE_JOBS: ${{ env.MAKE_JOBS || 8 }}
         run: |
-          make -j$(nproc) || make -j1 V=s
+          set -e
+          echo "TMPDIR=${TMPDIR}"
+          echo "Start build with -j$(nproc)"
+          if ! make -j$(nproc); then
+            echo "Parallel build failed, retry with -j1 V=s for verbose logs"
+            make -j1 V=s
+          fi
 
       - name: Package outputs
         run: |
@@ -170,6 +200,7 @@ jobs:
           cp -av openwrt/bin/targets/ramips/mt7620/* output/ || true
           cp -av .config.saved output/seed.config
           cp -av openwrt/feeds.conf.default output/feeds.conf.default
+          df -h
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
