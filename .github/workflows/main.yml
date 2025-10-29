@@ -20,7 +20,7 @@ jobs:
 
     env:
       TZ: Asia/Shanghai
-      # 关键：把临时目录改到工作区，避免 /tmp 爆满
+      # 把临时目录改到工作区，避免 /tmp 爆满触发 config.guess 失败
       TMPDIR: ${{ github.workspace }}/tmp
       EXTRA_PACKAGES: >
         luci
@@ -73,7 +73,7 @@ jobs:
         run: |
           set -e
 
-          # 如果默认 feeds 被意外缺失，恢复到官方默认
+          # 恢复默认官方 feeds（若缺失）
           if ! grep -q '^src-git luci ' feeds.conf.default 2>/dev/null; then
             cat > feeds.conf.default << 'EOF'
           src-git packages https://git.openwrt.org/feed/packages.git
@@ -83,7 +83,7 @@ jobs:
           EOF
           fi
 
-          # 追加第三方 feeds（PassWall 主仓库 + packages、Automount、FRP、Argon）
+          # 追加第三方 feeds
           {
             echo ""
             echo "# PassWall"
@@ -119,7 +119,6 @@ jobs:
             done
             return 1
           }
-
           try_update
           try_install
 
@@ -131,7 +130,6 @@ jobs:
               exit 1
             fi
           done
-
           ls -la feeds
           df -h
 
@@ -146,11 +144,12 @@ jobs:
             {
               echo "CONFIG_TARGET_ramips=y"
               echo "CONFIG_TARGET_ramips_mt7620=y"
-              # 只编译 youku_yk-l1，关闭多 Profile
+              # 只编译 youku_yk-l1，禁用多/全 profile
               echo "CONFIG_TARGET_MULTI_PROFILE=n"
+              echo "CONFIG_TARGET_ALL_PROFILES=n"
             } >> .config
 
-            # 显式仅启用当前设备
+            # 清掉任何已选机型，只启用 youku_yk-l1
             sed -i '/^CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_/d' .config
             echo 'CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_youku_yk-l1=y' >> .config
 
@@ -224,14 +223,14 @@ jobs:
           make download -j$(nproc)
           df -h
 
-      - name: Build
+      - name: Build (only youku_yk-l1 images)
         working-directory: openwrt
         run: |
           set -e
-          echo "Start build with -j$(nproc)"
-          if ! make -j$(nproc); then
+          echo "Start build (TARGET_DEVICES=youku_yk-l1)"
+          if ! make -j"$(nproc)" TARGET_DEVICES=youku_yk-l1; then
             echo "Parallel build failed, retry with -j1 V=s"
-            make -j1 V=s
+            make -j1 V=s TARGET_DEVICES=youku_yk-l1
           fi
 
       - name: Package outputs
