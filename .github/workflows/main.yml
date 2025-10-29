@@ -20,6 +20,7 @@ jobs:
 
     env:
       TZ: Asia/Shanghai
+      # 关键：把临时目录改到工作区，避免 /tmp 爆满
       TMPDIR: ${{ github.workspace }}/tmp
       EXTRA_PACKAGES: >
         luci
@@ -50,6 +51,7 @@ jobs:
           mkdir -p "${TMPDIR}"
           echo "TMPDIR=${TMPDIR}"
           df -h
+          echo "CPU cores: $(nproc)"
 
       - name: Install build deps
         run: |
@@ -65,31 +67,72 @@ jobs:
           cd openwrt
           git fetch --tags --force
           git checkout "${{ github.event.inputs.OPENWRT_BRANCH || 'openwrt-24.10' }}"
-          ./scripts/feeds update -a
 
-      - name: Add 3rd-party feeds (PassWall / PassWall packages / Automount / FRP / Argon)
+      - name: Add & update feeds (with retry)
         working-directory: openwrt
         run: |
+          set -e
+
+          # 如果默认 feeds 被意外缺失，恢复到官方默认
+          if ! grep -q '^src-git luci ' feeds.conf.default 2>/dev/null; then
+            cat > feeds.conf.default << 'EOF'
+          src-git packages https://git.openwrt.org/feed/packages.git
+          src-git luci https://git.openwrt.org/project/luci.git
+          src-git routing https://git.openwrt.org/feed/routing.git
+          src-git telephony https://git.openwrt.org/feed/telephony.git
+          EOF
+          fi
+
+          # 追加第三方 feeds（PassWall 主仓库 + packages、Automount、FRP、Argon）
           {
-            echo "";
-            echo "# PassWall";
-            echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall";
-            echo "";
-            echo "# PassWall packages (chinadns-ng / dns2socks / tcping etc.)";
-            echo "src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages";
-            echo "";
-            echo "# Automount";
-            echo "src-git automount https://github.com/sirpdboy/automount";
-            echo "";
-            echo "# FRP (client only)";
-            echo "src-git frp https://github.com/kuoruan/openwrt-frp";
-            echo "";
-            echo "# Argon theme";
-            echo "src-git argon https://github.com/jerrykuku/luci-theme-argon";
+            echo ""
+            echo "# PassWall"
+            echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall"
+            echo ""
+            echo "# PassWall packages (chinadns-ng / dns2socks / tcping etc.)"
+            echo "src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages"
+            echo ""
+            echo "# Automount"
+            echo "src-git automount https://github.com/sirpdboy/automount"
+            echo ""
+            echo "# FRP (client only)"
+            echo "src-git frp https://github.com/kuoruan/openwrt-frp"
+            echo ""
+            echo "# Argon theme"
+            echo "src-git argon https://github.com/jerrykuku/luci-theme-argon"
           } >> feeds.conf.default
 
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          # 带重试的 update/install
+          try_update() {
+            for i in 1 2 3; do
+              echo "== Feeds update attempt $i =="
+              ./scripts/feeds update -a && return 0
+              sleep 5
+            done
+            return 1
+          }
+          try_install() {
+            for i in 1 2 3; do
+              echo "== Feeds install attempt $i =="
+              ./scripts/feeds install -a && return 0
+              sleep 5
+            done
+            return 1
+          }
+
+          try_update
+          try_install
+
+          # 校验目录存在
+          for d in luci routing telephony packages passwall passwall_packages automount frp argon; do
+            if [ ! -d "feeds/$d" ]; then
+              echo "::error ::feeds/$d 不存在，feeds 更新失败"
+              ls -la feeds || true
+              exit 1
+            fi
+          done
+
+          ls -la feeds
           df -h
 
       - name: Create/restore .config (ramips/mt7620 -> youku_yk-l1 ONLY)
@@ -103,12 +146,11 @@ jobs:
             {
               echo "CONFIG_TARGET_ramips=y"
               echo "CONFIG_TARGET_ramips_mt7620=y"
-              # 关键：只编译 youku_yk-l1，关闭多 Profile
+              # 只编译 youku_yk-l1，关闭多 Profile
               echo "CONFIG_TARGET_MULTI_PROFILE=n"
-              # 清理其他机型选择（防止默认带上多机型）
             } >> .config
 
-            # 显式仅启用当前设备（有些版本对 PROFILE 字符串不敏感，直接选设备最保险）
+            # 显式仅启用当前设备
             sed -i '/^CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_/d' .config
             echo 'CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_youku_yk-l1=y' >> .config
 
