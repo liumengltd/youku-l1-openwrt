@@ -53,13 +53,16 @@ jobs:
           git checkout "${{ github.event.inputs.OPENWRT_BRANCH || 'openwrt-24.10' }}"
           ./scripts/feeds update -a
 
-      - name: Add 3rd-party feeds (PassWall / Automount / FRP / Argon)
+      - name: Add 3rd-party feeds (PassWall / PassWall packages / Automount / FRP / Argon)
         working-directory: openwrt
         run: |
           {
             echo "";
             echo "# PassWall";
             echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall";
+            echo "";
+            echo "# PassWall packages (chinadns-ng / dns2socks / tcping etc.)";
+            echo "src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages";
             echo "";
             echo "# Automount";
             echo "src-git automount https://github.com/sirpdboy/automount";
@@ -88,7 +91,7 @@ jobs:
               echo "CONFIG_TARGET_PROFILE=\"youku_yk-l1\""
             } >> .config
 
-            # 预装软件包
+            # 预装软件包（来自 env.EXTRA_PACKAGES）
             for p in $EXTRA_PACKAGES; do
               echo "CONFIG_PACKAGE_${p}=y" >> .config
             done
@@ -117,6 +120,11 @@ jobs:
               echo 'CONFIG_PACKAGE_shadowsocks-rust-ssredir=n'
               echo 'CONFIG_PACKAGE_sing-box-with-plugins=n'
             } >> .config
+
+            # PassWall 的三个工具依赖（避免 WARNING / 缺包）
+            echo 'CONFIG_PACKAGE_chinadns-ng=y' >> .config
+            echo 'CONFIG_PACKAGE_dns2socks=y' >> .config
+            echo 'CONFIG_PACKAGE_tcping=y' >> .config
 
             # 仅客户端：不编译 frps
             echo 'CONFIG_PACKAGE_frps=n' >> .config
