@@ -20,7 +20,6 @@ jobs:
 
     env:
       TZ: Asia/Shanghai
-      # 关键：把临时目录改到工作区，避免 /tmp 爆满
       TMPDIR: ${{ github.workspace }}/tmp
       EXTRA_PACKAGES: >
         luci
@@ -42,9 +41,7 @@ jobs:
 
       - name: Free disk space (dotnet / android / ghc)
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo docker image prune -af || true
           df -h
 
@@ -53,7 +50,6 @@ jobs:
           mkdir -p "${TMPDIR}"
           echo "TMPDIR=${TMPDIR}"
           df -h
-          echo "CPU cores: $(nproc)"
 
       - name: Install build deps
         run: |
@@ -96,7 +92,7 @@ jobs:
           ./scripts/feeds install -a
           df -h
 
-      - name: Create/restore .config (ramips/mt7620 -> youku_yk-l1)
+      - name: Create/restore .config (ramips/mt7620 -> youku_yk-l1 ONLY)
         working-directory: openwrt
         run: |
           if [ "${{ github.event.inputs.KEEP_CONFIG }}" = "true" ] && [ -f ../.config.saved ]; then
@@ -107,8 +103,14 @@ jobs:
             {
               echo "CONFIG_TARGET_ramips=y"
               echo "CONFIG_TARGET_ramips_mt7620=y"
-              echo "CONFIG_TARGET_PROFILE=\"youku_yk-l1\""
+              # 关键：只编译 youku_yk-l1，关闭多 Profile
+              echo "CONFIG_TARGET_MULTI_PROFILE=n"
+              # 清理其他机型选择（防止默认带上多机型）
             } >> .config
+
+            # 显式仅启用当前设备（有些版本对 PROFILE 字符串不敏感，直接选设备最保险）
+            sed -i '/^CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_/d' .config
+            echo 'CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_youku_yk-l1=y' >> .config
 
             # 预装软件包（来自 env.EXTRA_PACKAGES）
             for p in $EXTRA_PACKAGES; do
@@ -182,15 +184,11 @@ jobs:
 
       - name: Build
         working-directory: openwrt
-        env:
-          # make 失败时会提示改为 -j1 V=s；我们先用多核，失败会自动降级重试一遍
-          MAKE_JOBS: ${{ env.MAKE_JOBS || 8 }}
         run: |
           set -e
-          echo "TMPDIR=${TMPDIR}"
           echo "Start build with -j$(nproc)"
           if ! make -j$(nproc); then
-            echo "Parallel build failed, retry with -j1 V=s for verbose logs"
+            echo "Parallel build failed, retry with -j1 V=s"
             make -j1 V=s
           fi
 
