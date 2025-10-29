@@ -20,7 +20,6 @@ jobs:
 
     env:
       TZ: Asia/Shanghai
-      # 可按需增删包；已包含 zh-cn/argon/wol/passwall/frpc/自动挂载相关
       EXTRA_PACKAGES: >
         luci
         luci-compat
@@ -57,20 +56,20 @@ jobs:
       - name: Add 3rd-party feeds (PassWall / Automount / FRP / Argon)
         working-directory: openwrt
         run: |
-          cat >> feeds.conf.default << 'EOF'
-
-          # PassWall
-          src-git passwall https://github.com/xiaorouji/openwrt-passwall
-
-          # Automount
-          src-git automount https://github.com/sirpdboy/automount
-
-          # FRP (client only)
-          src-git frp https://github.com/kuoruan/openwrt-frp
-
-          # Argon theme
-          src-git argon https://github.com/jerrykuku/luci-theme-argon
-          EOF
+          {
+            echo "";
+            echo "# PassWall";
+            echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall";
+            echo "";
+            echo "# Automount";
+            echo "src-git automount https://github.com/sirpdboy/automount";
+            echo "";
+            echo "# FRP (client only)";
+            echo "src-git frp https://github.com/kuoruan/openwrt-frp";
+            echo "";
+            echo "# Argon theme";
+            echo "src-git argon https://github.com/jerrykuku/luci-theme-argon";
+          } >> feeds.conf.default
 
           ./scripts/feeds update -a
           ./scripts/feeds install -a
@@ -83,54 +82,52 @@ jobs:
             cp ../.config.saved .config
           else
             rm -f .config
-            cat >> .config << 'EOF'
-            CONFIG_TARGET_ramips=y
-            CONFIG_TARGET_ramips_mt7620=y
-            CONFIG_TARGET_PROFILE="youku_yk-l1"
-            EOF
+            {
+              echo "CONFIG_TARGET_ramips=y"
+              echo "CONFIG_TARGET_ramips_mt7620=y"
+              echo "CONFIG_TARGET_PROFILE=\"youku_yk-l1\""
+            } >> .config
 
-            # 预装软件包（来自 env.EXTRA_PACKAGES）
+            # 预装软件包
             for p in $EXTRA_PACKAGES; do
               echo "CONFIG_PACKAGE_${p}=y" >> .config
             done
 
-            # —— 只保留 PassWall 的简体中文语言包，其它全部禁用 ——
+            # 只保留 PassWall 的简体中文语言包，其它禁用
             echo 'CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y' >> .config
-            for lang in \
-              ar bg bn ca cs da de el es et fa fi fr he hi hr hu id it ja ko ms nb-no nl pl pt pt-br ro ru sk sl sr sv th tr uk vi zh-tw \
-            ; do
+            for lang in ar bg bn ca cs da de el es et fa fi fr he hi hr hu id it ja ko ms nb-no nl pl pt pt-br ro ru sk sl sr sv th tr uk vi zh-tw; do
               echo "CONFIG_PACKAGE_luci-i18n-passwall-${lang}=n" >> .config
             done
 
-            # —— PassWall 内核精简：只留 sing-box ——
+            # PassWall 内核精简：只留 sing-box
             echo 'CONFIG_PACKAGE_sing-box=y' >> .config
-            cat >> .config << 'EOF'
-            CONFIG_PACKAGE_xray-core=n
-            CONFIG_PACKAGE_v2ray-core=n
-            CONFIG_PACKAGE_naiveproxy=n
-            CONFIG_PACKAGE_hysteria=n
-            CONFIG_PACKAGE_hysteria2=n
-            CONFIG_PACKAGE_tuic-client=n
-            CONFIG_PACKAGE_brook=n
-            CONFIG_PACKAGE_trojan=n
-            CONFIG_PACKAGE_trojan-go=n
-            CONFIG_PACKAGE_shadowsocks-libev-ss-local=n
-            CONFIG_PACKAGE_shadowsocks-libev-ss-redir=n
-            CONFIG_PACKAGE_shadowsocks-rust-sslocal=n
-            CONFIG_PACKAGE_shadowsocks-rust-ssredir=n
-            CONFIG_PACKAGE_sing-box-with-plugins=n
-            EOF
+            {
+              echo 'CONFIG_PACKAGE_xray-core=n'
+              echo 'CONFIG_PACKAGE_v2ray-core=n'
+              echo 'CONFIG_PACKAGE_naiveproxy=n'
+              echo 'CONFIG_PACKAGE_hysteria=n'
+              echo 'CONFIG_PACKAGE_hysteria2=n'
+              echo 'CONFIG_PACKAGE_tuic-client=n'
+              echo 'CONFIG_PACKAGE_brook=n'
+              echo 'CONFIG_PACKAGE_trojan=n'
+              echo 'CONFIG_PACKAGE_trojan-go=n'
+              echo 'CONFIG_PACKAGE_shadowsocks-libev-ss-local=n'
+              echo 'CONFIG_PACKAGE_shadowsocks-libev-ss-redir=n'
+              echo 'CONFIG_PACKAGE_shadowsocks-rust-sslocal=n'
+              echo 'CONFIG_PACKAGE_shadowsocks-rust-ssredir=n'
+              echo 'CONFIG_PACKAGE_sing-box-with-plugins=n'
+            } >> .config
 
             # 仅客户端：不编译 frps
             echo 'CONFIG_PACKAGE_frps=n' >> .config
 
-            # 体积优化（dnsmasq-full、关闭调试项）
-            cat >> .config << 'EOF'
-            # CONFIG_PACKAGE_dnsmasq is not set
-            CONFIG_PACKAGE_dnsmasq-full=y
-            CONFIG_DEBUG_KERNEL=n
-            CONFIG_KERNEL_DEBUG_FS=n
-            EOF
+            # 体积优化
+            {
+              echo '# CONFIG_PACKAGE_dnsmasq is not set'
+              echo 'CONFIG_PACKAGE_dnsmasq-full=y'
+              echo 'CONFIG_DEBUG_KERNEL=n'
+              echo 'CONFIG_KERNEL_DEBUG_FS=n'
+            } >> .config
           fi
 
           make defconfig
@@ -140,11 +137,11 @@ jobs:
         working-directory: openwrt
         run: |
           mkdir -p files/etc/config
-          cat > files/etc/config/luci << 'EOF'
-          config core 'main'
-              option lang 'zh_cn'
-              option mediaurlbase '/luci-static/argon'
-          EOF
+          {
+            echo "config core 'main'"
+            echo "    option lang 'zh_cn'"
+            echo "    option mediaurlbase '/luci-static/argon'"
+          } > files/etc/config/luci
 
       - name: Enable ccache & download sources
         working-directory: openwrt
